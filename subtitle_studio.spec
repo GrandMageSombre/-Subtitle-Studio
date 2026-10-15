@@ -88,6 +88,8 @@ COLLECT_PACKAGES = [
     # huggingface_hub 使用 _LazyModule 惰性导入 requests/tqdm/filelock/fsspec，
     # 静态分析抓不到，必须整体收集，否则模型下载可能 ImportError
     "huggingface_hub",
+    # opencc-python-reimplemented 自带简繁词典数据文件，需整体收集
+    "opencc",
 ]
 
 # 复制 dist-info：huggingface_hub 等运行时会用 importlib.metadata 读版本，

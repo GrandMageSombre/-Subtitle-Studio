@@ -115,3 +115,24 @@ def test_plain_english_dot_still_splits():
     ]
     cues = asr.refine_segments([make_segment(words)])
     assert [c["text"] for c in cues] == ["I like it.", "Good."]
+
+
+# ---------------------------------------------------------------- 字形转换
+
+def test_convert_script_to_simplified():
+    assert asr.convert_script("這是繁體字幕，軟體裡面", "simplified") == "这是繁体字幕，软件里面"
+
+
+def test_convert_script_to_traditional():
+    # s2twp 词汇级转换：软件→軟體
+    assert asr.convert_script("这是简体字幕，软件里面", "traditional") == "這是簡體字幕，軟體裡面"
+
+
+def test_convert_script_auto_and_unknown_passthrough():
+    assert asr.convert_script("保持原样", "auto") == "保持原样"
+    assert asr.convert_script("保持原样", "") == "保持原样"
+    assert asr.convert_script("保持原样", "bogus") == "保持原样"
+
+
+def test_convert_script_preserves_non_chinese():
+    assert asr.convert_script("Hello 世界 123!", "simplified") == "Hello 世界 123!"

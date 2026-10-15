@@ -1089,6 +1089,7 @@ $("btnRecStart").addEventListener("click", async () => {
   fd.append("model", $("selModel").value);
   fd.append("language", $("selLanguage").value);
   fd.append("task", $("selTask").value);
+  fd.append("script", $("selScript").value);
   $("btnRecStart").disabled = true;
   $("btnRecCancel").textContent = "后台运行";
   $("recProgressWrap").classList.remove("hidden");
@@ -1181,7 +1182,7 @@ $("exportMenu").addEventListener("click", (e) => {
 window.addEventListener("drop", (e) => {
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
   if (!f) return;
-  if (/\.(srt|vtt)$/i.test(f.name)) {
+  if (/\.(srt|vtt|ass|ssa)$/i.test(f.name)) {
     const dt = new DataTransfer();
     dt.items.add(f);
     $("fileImport").files = dt.files;
@@ -1235,6 +1236,7 @@ async function populateSelects() {
   fill($("selModel"), cfg.models, "small");
   fill($("selLanguage"), cfg.languages, "");
   fill($("selTask"), cfg.tasks, "transcribe");
+  fill($("selScript"), cfg.scripts, "auto");
 }
 
 async function init() {

@@ -1,4 +1,4 @@
-"""SRT / VTT / TXT 字幕格式的解析与序列化。
+"""SRT / VTT / ASS / TXT / JSON 字幕格式的解析与序列化。
 
 内部统一数据模型（cue 列表）::
 
@@ -47,6 +47,15 @@ def format_ts_srt(seconds: float) -> str:
 def format_ts_vtt(seconds: float) -> str:
     """秒 -> ``HH:MM:SS.mmm``（WebVTT 格式）。"""
     return format_ts_srt(seconds).replace(",", ".")
+
+
+def format_ts_ass(seconds: float) -> str:
+    """秒 -> ``H:MM:SS.cc``（ASS 格式，厘秒 half-up 舍入）。"""
+    cs = math.floor(max(0.0, float(seconds)) * 100 + 0.5)
+    h, cs = divmod(cs, 360_000)
+    m, cs = divmod(cs, 6_000)
+    s, cs = divmod(cs, 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
 def parse_ts(token: str) -> float:
@@ -119,6 +128,34 @@ def to_vtt(cues: Iterable[Cue]) -> str:
 def to_txt(cues: Iterable[Cue]) -> str:
     """cue 列表 -> 纯文本（仅文字，无时间轴）。"""
     return "\n".join(_clean_text(cue.get("text", "")) for cue in cues) + "\n"
+
+
+#: ASS 导出头部模板（必剪 / 剪映 / Aegisub 均可识别）
+_ASS_HEADER = """[Script Info]
+Title: Subtitle Studio Export
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+def to_ass(cues: Iterable[Cue]) -> str:
+    """cue 列表 -> ASS（SubStation Alpha）文本，换行转为 ``\\N``。"""
+    lines = []
+    for cue in cues:
+        text = _clean_text(cue.get("text", "")).replace("\n", r"\N")
+        lines.append(
+            f"Dialogue: 0,{format_ts_ass(cue['start'])},{format_ts_ass(cue['end'])},"
+            f"Default,,0,0,0,,{text}"
+        )
+    return _ASS_HEADER + "\n".join(lines) + "\n"
 
 
 def to_json(cues: Iterable[Cue]) -> str:
@@ -218,10 +255,71 @@ def parse_vtt(text: str) -> list[Cue]:
     return cues
 
 
+_ASS_TAG_RE = re.compile(r"\{[^}]*\}")
+
+
+def parse_ass(text: str) -> list[Cue]:
+    """解析 ASS/SSA：按 ``[Events]`` 段 Format 行定位字段，取 Dialogue 的
+    Start/End/Text；剔除 ASS 覆盖标签（``{\\...}``），``\\N`` 转换行、
+    ``\\h`` 转空格。
+
+    小写 ``\\n``（SSA 软换行，现代播放器多忽略）保留原样：若转换行，
+    文本里的路径类字面量（如 ``C:\\new``）会被静默损坏。
+    """
+    text = text.lstrip("\ufeff")  # 容忍 BOM（自家导出即带 BOM）
+    cues: list[Cue] = []
+    fields: list[str] | None = None
+    in_events = False
+    for raw in _normalize_newlines(text).split("\n"):
+        line = raw.strip()
+        low = line.lower()
+        if low.startswith("[") and low.endswith("]"):
+            in_events = low == "[events]"
+            continue
+        if not in_events:
+            continue
+        if low.startswith("format:"):
+            fields = [f.strip().lower() for f in line[len("format:"):].split(",")]
+            continue
+        if not low.startswith("dialogue:"):
+            continue
+        rest = line[len("dialogue:"):].lstrip()
+        if fields:
+            # 文本可含逗号：只切前 len(fields)-1 刀，最后一列尽收 Text
+            parts = rest.split(",", len(fields) - 1)
+            if len(parts) < len(fields):
+                continue
+            row = dict(zip(fields, parts))
+            start_s, end_s, body = row.get("start", ""), row.get("end", ""), row.get("text", "")
+        else:
+            # 无 Format 行时按 v4 默认 10 字段
+            parts = rest.split(",", 9)
+            if len(parts) < 10:
+                continue
+            start_s, end_s, body = parts[1], parts[2], parts[9]
+        try:
+            start, end = parse_ts(start_s), parse_ts(end_s)
+        except ValueError:
+            continue
+        body = _ASS_TAG_RE.sub("", body)
+        body = body.replace(r"\N", "\n").replace(r"\h", " ")
+        cue = _finish_cue(start, end, body)
+        if cue:
+            cues.append(cue)
+    return cues
+
+
 def parse_auto(text: str) -> list[Cue]:
-    """按内容自动判别 SRT / VTT 并解析。"""
-    if text.lstrip("\ufeff \t\r\n").startswith("WEBVTT"):
+    """按内容自动判别 SRT / VTT / ASS 并解析。"""
+    head = text.lstrip("\ufeff \t\r\n")
+    if head.startswith("WEBVTT"):
         return parse_vtt(text)
+    # ASS 判别须为行首的 [Script Info] / [Events] 段标记；
+    # 纯子串匹配会把正文里提到 "[events]" 的 SRT 误判为 ASS
+    if head.lower().startswith("[script info]") or re.search(
+        r"(?mi)^\[events\]\s*$", head[:4096]
+    ):
+        return parse_ass(text)
     return parse_srt(text)
 
 

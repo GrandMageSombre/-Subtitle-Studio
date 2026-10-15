@@ -54,12 +54,13 @@ MEDIA_TYPES = {
     ".wma": "audio/x-ms-wma",
 }
 
-#: 导出格式 -> (MIME, 扩展名)
+#: 导出格式 -> (MIME, 扩展名, 序列化函数)；新增格式只需在此登记一行
 EXPORT_FORMATS = {
-    "srt": ("application/x-subrip; charset=utf-8", "srt"),
-    "vtt": ("text/vtt; charset=utf-8", "vtt"),
-    "txt": ("text/plain; charset=utf-8", "txt"),
-    "json": ("application/json; charset=utf-8", "json"),
+    "srt": ("application/x-subrip; charset=utf-8", "srt", srt.to_srt),
+    "vtt": ("text/vtt; charset=utf-8", "vtt", srt.to_vtt),
+    "ass": ("text/plain; charset=utf-8", "ass", srt.to_ass),
+    "txt": ("text/plain; charset=utf-8", "txt", srt.to_txt),
+    "json": ("application/json; charset=utf-8", "json", srt.to_json),
 }
 
 #: 识别上传体积上限（默认 10GB，可用环境变量 MAX_UPLOAD_MB 调整）
@@ -120,6 +121,7 @@ def _run_transcription(job_id: str) -> None:
             model_size=settings.get("model", "small"),
             language=settings.get("language") or None,
             task=settings.get("task", "transcribe"),
+            script=settings.get("script", "auto"),
             progress_cb=lambda p, m=None: manager.set_progress(job_id, p, m),
         )
         manager.set_segments(job_id, segments)
@@ -176,6 +178,7 @@ def config():
         "models": [{"id": k, "label": v} for k, v in asr.MODELS.items()],
         "languages": [{"id": k, "label": v} for k, v in asr.LANGUAGES.items()],
         "tasks": [{"id": k, "label": v} for k, v in asr.TASKS.items()],
+        "scripts": [{"id": k, "label": v} for k, v in asr.SCRIPTS.items()],
     }
 
 
@@ -189,6 +192,7 @@ async def transcribe(
     model: str = Form("small"),
     language: str = Form(""),
     task: str = Form("transcribe"),
+    script: str = Form("auto"),
 ):
     if model not in asr.MODELS:
         raise HTTPException(400, f"不支持的模型: {model}")
@@ -196,6 +200,8 @@ async def transcribe(
         raise HTTPException(400, f"不支持的语言: {language}")
     if task not in asr.TASKS:
         raise HTTPException(400, f"不支持的任务: {task}")
+    if script not in asr.SCRIPTS:
+        raise HTTPException(400, f"不支持的字形选项: {script}")
     if file.size is not None and file.size > MAX_UPLOAD_BYTES:
         raise HTTPException(400, f"文件过大（上限 {MAX_UPLOAD_MB} MB）")
 
@@ -203,7 +209,7 @@ async def transcribe(
     job = manager.create(
         "transcribe",
         filename,
-        settings={"model": model, "language": language, "task": task},
+        settings={"model": model, "language": language, "task": task, "script": script},
     )
     dest = os.path.join(manager.job_dir(job.id), "media" + _safe_ext(filename))
     written = 0
@@ -315,15 +321,11 @@ def export_subtitle(job_id: str, format: str = Query("srt")):
     if fmt not in EXPORT_FORMATS:
         raise HTTPException(400, f"不支持的导出格式: {format}")
     cues = sorted(job.segments, key=lambda c: (c["start"], c["end"]))
-    if fmt == "srt":
-        content = srt.to_srt(cues)
-    elif fmt == "vtt":
-        content = srt.to_vtt(cues)
-    elif fmt == "txt":
-        content = srt.to_txt(cues)
-    else:
-        content = srt.to_json(cues)
-    mime, ext = EXPORT_FORMATS[fmt]
+    mime, ext, serializer = EXPORT_FORMATS[fmt]
+    content = serializer(cues)
+    if fmt == "ass":
+        # 必剪/剪映在 Windows 上可能按 ANSI 解码无 BOM 的 UTF-8，加 BOM 防中文乱码
+        content = "\ufeff" + content
     base = os.path.splitext(os.path.basename(job.filename))[0] or "subtitles"
     return Response(
         content=content.encode("utf-8"),

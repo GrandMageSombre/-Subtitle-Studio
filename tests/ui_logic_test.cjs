@@ -134,6 +134,7 @@ globalThis.fetch = async (url, opts) => {
         models: [{ id: "tiny", label: "t" }, { id: "base", label: "b" }, { id: "small", label: "s" }],
         languages: [{ id: "", label: "自动" }, { id: "zh", label: "中文" }],
         tasks: [{ id: "transcribe", label: "识别" }, { id: "translate", label: "翻译" }],
+        scripts: [{ id: "auto", label: "自动" }, { id: "simplified", label: "简体" }, { id: "traditional", label: "繁体" }],
       }),
     };
   }

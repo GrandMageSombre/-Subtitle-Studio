@@ -139,3 +139,99 @@ def test_normalize_sorts_and_cleans(seed):
     for c in out:
         assert c["end"] > c["start"]
         assert c["text"].strip()
+
+
+# ---------------------------------------------------------------- ASS
+
+def _round2(v: float) -> float:
+    """厘秒 half-up（ASS 时间精度）。"""
+    import math
+
+    return math.floor(v * 100 + 0.5) / 100
+
+
+def test_ass_timestamp():
+    assert srt.format_ts_ass(0) == "0:00:00.00"
+    assert srt.format_ts_ass(3725.25) == "1:02:05.25"
+    assert srt.format_ts_ass(1.006) == "0:00:01.01"
+    assert srt.format_ts_ass(59.994) == "0:00:59.99"
+    assert srt.format_ts_ass(59.996) == "0:01:00.00"
+    assert srt.parse_ts("0:01:00.00") == pytest.approx(60.0)
+    assert srt.parse_ts("1:02:05.25") == pytest.approx(3725.25)
+
+
+def test_ass_export_structure():
+    cues = [{"start": 1.0, "end": 3.5, "text": "第一行\n第二行"}]
+    out = srt.to_ass(cues)
+    assert out.startswith("[Script Info]")
+    assert "[V4+ Styles]" in out and "[Events]" in out
+    line = [l for l in out.splitlines() if l.startswith("Dialogue:")][0]
+    assert line == r"Dialogue: 0,0:00:01.00,0:00:03.50,Default,,0,0,0,,第一行\N第二行"
+
+
+@pytest.mark.parametrize("seed", range(5))
+@pytest.mark.parametrize("n", [1, 5, 40])
+def test_ass_roundtrip(seed, n):
+    cues = srt.normalize_cues(gen_cues(n, seed * 100 + n))
+    parsed = srt.parse_ass(srt.to_ass(cues))
+    assert len(parsed) == len(cues)
+    for got, want in zip(parsed, cues):
+        # ASS 时间精度为厘秒，毫秒级向量按厘秒对齐后比较
+        assert got["start"] == pytest.approx(_round2(want["start"]), abs=0.011)
+        assert got["end"] == pytest.approx(_round2(want["end"]), abs=0.011)
+        assert got["text"] == want["text"]
+
+
+def test_ass_parse_comma_and_tags():
+    text = (
+        "[Script Info]\nTitle: t\n\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Text\n"
+        "Dialogue: 0,0:00:01.00,0:00:02.00,Default,{\\pos(10,20)\\b1}带标签,和逗号\\N换行\n"
+        "Comment: 0,0:00:03.00,0:00:04.00,Default,注释行不导入\n"
+    )
+    cues = srt.parse_ass(text)
+    assert len(cues) == 1
+    assert cues[0]["start"] == 1.0 and cues[0]["end"] == 2.0
+    assert cues[0]["text"] == "带标签,和逗号\n换行"
+
+
+def test_ass_parse_no_format_line():
+    # 无 Format 行时按 v4 默认 10 字段解析
+    text = (
+        "[Events]\n"
+        "Dialogue: 0,0:00:05.50,0:00:08.00,Default,,0,0,0,,无格式行\n"
+    )
+    cues = srt.parse_ass(text)
+    assert len(cues) == 1
+    assert cues[0]["start"] == 5.5 and cues[0]["end"] == 8.0
+    assert cues[0]["text"] == "无格式行"
+
+
+def test_parse_auto_detects_ass():
+    cues = srt.parse_auto(srt.to_ass([{"start": 0.0, "end": 1.0, "text": "测试"}]))
+    assert len(cues) == 1 and cues[0]["text"] == "测试"
+
+
+def test_parse_auto_not_fooled_by_events_word():
+    # SRT 正文提到 [events] 不得误判为 ASS（判别须行首段标记）
+    text = (
+        "1\n00:00:01,000 --> 00:00:03,000\n他说 [events] 是一个词\n\n"
+        "2\n00:00:04,000 --> 00:00:05,000\n正常\n"
+    )
+    cues = srt.parse_auto(text)
+    assert len(cues) == 2
+    assert cues[0]["text"] == "他说 [events] 是一个词"
+
+
+def test_ass_roundtrip_preserves_backslash():
+    # 文本含路径类字面量（小写 \n 序列）回读不得被静默损坏
+    cues = [{"start": 1.0, "end": 2.0, "text": r"C:\new 路径"}]
+    back = srt.parse_ass(srt.to_ass(cues))
+    assert back[0]["text"] == r"C:\new 路径"
+
+
+def test_ass_parse_tolerates_bom():
+    out = srt.to_ass([{"start": 0.0, "end": 1.0, "text": "带BOM"}])
+    cues = srt.parse_ass("\ufeff" + out)
+    assert len(cues) == 1 and cues[0]["text"] == "带BOM"

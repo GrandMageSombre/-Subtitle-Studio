@@ -5,3 +5,5 @@ faster-whisper>=1.0
 # PyAV 19 移除了 av.open 的 metadata_errors 参数，faster-whisper 1.2.x 尚不兼容；
 # 钉在 <19（应用内另有运行时兼容补丁兜底）
 av>=14.4,<19
+# 中文字形转换（简 ⇄ 繁），纯 Python 实现，自带词典
+opencc-python-reimplemented>=0.1.7

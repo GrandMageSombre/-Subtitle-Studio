@@ -26,6 +26,7 @@
       <div class="dropdown-menu" id="exportMenu">
         <button data-fmt="srt">SRT 字幕（通用）</button>
         <button data-fmt="vtt">WebVTT 字幕</button>
+        <button data-fmt="ass">ASS 字幕（必剪/剪映）</button>
         <button data-fmt="txt">TXT 纯文本</button>
         <button data-fmt="json">JSON 数据</button>
       </div>
@@ -135,8 +136,11 @@
       <label class="form-label">任务
         <select id="selTask"></select>
       </label>
+      <label class="form-label">中文字形
+        <select id="selScript"></select>
+      </label>
     </div>
-    <div class="rec-note">首次使用所选模型需联网下载（国内网络自动使用 hf-mirror 镜像）；识别全程在本机 CPU 完成，文件不会外传。</div>
+    <div class="rec-note">首次使用所选模型需联网下载（国内网络自动使用 hf-mirror 镜像）；识别全程在本机 CPU 完成，文件不会外传。「中文字形」用于把识别结果统一转为简体或繁体（词汇级转换），默认「自动」保持识别原样。</div>
     <div id="recProgressWrap" class="hidden">
       <div class="progress-bar"><div id="recProgressBar"></div></div>
       <div id="recStatus" class="rec-status">准备中…</div>
@@ -198,7 +202,8 @@
         <div class="help-head">提示</div>
         <div class="help-row">编辑内容自动保存，刷新不丢失</div>
         <div class="help-row">红色条目表示与上一条时间重叠</div>
-        <div class="help-row">也可把文件直接拖入窗口</div>
+        <div class="help-row">也可把文件直接拖入窗口（SRT / VTT / ASS 走导入，媒体走识别）</div>
+        <div class="help-row">导出 ASS 可直接导入必剪 / 剪映</div>
       </div>
     </div>
     <div class="modal-actions">
@@ -210,7 +215,7 @@
 <div id="toast" class="hidden"></div>
 
 <input type="file" id="fileRecognize" accept="video/*,audio/*" class="hidden">
-<input type="file" id="fileImport" accept=".srt,.vtt" class="hidden">
+<input type="file" id="fileImport" accept=".srt,.vtt,.ass,.ssa" class="hidden">
 <input type="file" id="fileLocalVideo" accept="video/*,audio/*" class="hidden">
 
 <script src="/static/app.js"></script>

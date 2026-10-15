@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tempfile
@@ -77,6 +78,8 @@ _ensure_hf_endpoint()
 from faster_whisper import WhisperModel  # noqa: E402
 
 from .srt import round3  # noqa: E402  half-up 舍入，与前端保持一致
+
+logger = logging.getLogger(__name__)
 
 
 def _patch_av_open_for_pyav19() -> None:
@@ -155,6 +158,43 @@ TASKS = {
     "transcribe": "识别为原语言字幕",
     "translate": "翻译成英语",
 }
+
+#: 中文字形选项（识别后处理，OpenCC 转换；auto = 不转换，保持识别原样）
+SCRIPTS = {
+    "auto": "自动（保持识别原样）",
+    "simplified": "简体中文",
+    "traditional": "繁体中文",
+}
+
+#: OpenCC 转换器实例缓存（词典加载耗时，按需构造并复用）
+_SCRIPT_CONVERTERS: dict = {}
+
+
+def convert_script(text: str, script: str) -> str:
+    """按选项转换中文字形（simplified/traditional）；auto 或 OpenCC
+    不可用（未安装/加载失败）时原样返回。
+
+    采用词汇级配置：简体走 ``tw2sp``（繁→简且转换台湾用词，如 軟體→软件）、
+    繁体走 ``s2twp``（简→繁台湾正体，如 软件→軟體），比纯字级 t2s/s2t 更自然。
+    """
+    if script not in ("simplified", "traditional"):
+        return text
+    try:
+        if script not in _SCRIPT_CONVERTERS:
+            try:
+                from opencc import OpenCC
+
+                _SCRIPT_CONVERTERS[script] = OpenCC("tw2sp" if script == "simplified" else "s2twp")
+            except Exception:  # noqa: BLE001
+                # 负缓存：构造失败后不再每条 cue 重试刷屏，降级返回原文
+                logger.warning("OpenCC 加载失败，字形转换降级为原文（script=%s）", script,
+                               exc_info=True)
+                _SCRIPT_CONVERTERS[script] = None
+        cc = _SCRIPT_CONVERTERS[script]
+        return cc.convert(text) if cc else text
+    except Exception:  # noqa: BLE001  转换失败不应阻断识别主流程
+        logger.warning("字形转换失败（script=%s），返回原文", script, exc_info=True)
+        return text
 
 #: 句末标点（中英文，含英文句点；与前端 splitTextAtPunct 正则保持一致，
 #: 改动需同步 static/app.js 并由 tests/test_consistency.py 校验）
@@ -299,6 +339,7 @@ def transcribe(
     model_size: str = "small",
     language: str | None = None,
     task: str = "transcribe",
+    script: str = "auto",
     compute_type: str = "int8",
     progress_cb: ProgressCB = None,
 ) -> list[dict]:
@@ -308,6 +349,7 @@ def transcribe(
     :param model_size: 模型尺寸，见 :data:`MODELS`
     :param language: 语言代码，``None`` 表示自动检测
     :param task: ``transcribe``（原语言）或 ``translate``（翻译成英语）
+    :param script: 中文字形，见 :data:`SCRIPTS`；``auto`` 表示不转换
     :param progress_cb: 进度回调，接收 0~1 的浮点数，可选第二个参数为状态文本
     """
     if model_size not in MODELS:
@@ -354,9 +396,15 @@ def transcribe(
 
         report(0.97, "正在按标点优化断句…")
         cues = refine_segments(raw_segments)
-        report(1.0, f"识别完成，共 {len(cues)} 条")
     finally:
         _TRANSCRIBE_LOCK.release()
+    # 字形转换不依赖 CTranslate2，移出转录锁执行，
+    # 避免词典加载与逐条转换的耗时延长锁占用、阻塞后续任务
+    if script != "auto":
+        report(0.98, "正在转换中文字形…")
+        for cue in cues:
+            cue["text"] = convert_script(cue["text"], script)
+    report(1.0, f"识别完成，共 {len(cues)} 条")
     return cues
 
 def fmt_hms(seconds: float) -> str:
