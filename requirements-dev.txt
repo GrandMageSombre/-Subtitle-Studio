@@ -1,0 +1,3 @@
+-r requirements.txt
+edge-tts>=6.1
+pytest>=8.0

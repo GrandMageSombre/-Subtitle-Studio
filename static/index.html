@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>字幕工坊 · 本地语音识别与在线字幕编辑</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-icon">🎬</span>
+    <div class="brand-text">
+      <div class="brand-name">字幕工坊</div>
+      <div class="brand-sub">Subtitle Studio · 本地识别 + 在线编辑</div>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn primary" id="btnRecognize">🎙️ 语音识别</button>
+    <button class="btn" id="btnImport">📂 导入字幕</button>
+    <button class="btn" id="btnLocalVideo">🎞️ 本地视频</button>
+    <div class="dropdown" id="exportDropdown">
+      <button class="btn" id="btnExport">💾 导出 ▾</button>
+      <div class="dropdown-menu" id="exportMenu">
+        <button data-fmt="srt">SRT 字幕（通用）</button>
+        <button data-fmt="vtt">WebVTT 字幕</button>
+        <button data-fmt="txt">TXT 纯文本</button>
+        <button data-fmt="json">JSON 数据</button>
+      </div>
+    </div>
+    <button class="btn icon" id="btnHelp" title="快捷键与帮助">?</button>
+  </div>
+</header>
+
+<div id="globalProgress" class="hidden">
+  <div class="gp-track"><div id="globalProgressBar"></div></div>
+  <span id="globalProgressText"></span>
+</div>
+
+<main id="layout">
+
+  <!-- 左侧：播放器 + 时间轴 -->
+  <section id="stage">
+    <div id="playerWrap">
+      <video id="video" playsinline preload="metadata"></video>
+      <div id="subOverlay" class="hidden"></div>
+      <div id="emptyState" class="state-layer">
+        <div class="state-icon">🎬</div>
+        <div class="state-title">开始制作字幕</div>
+        <div class="state-desc">上传视频/音频自动识别字幕，或导入已有字幕文件在线编辑</div>
+        <div class="state-actions">
+          <button class="btn primary" id="btnEmptyRecognize">🎙️ 语音识别</button>
+          <button class="btn" id="btnEmptyImport">📂 导入字幕</button>
+        </div>
+        <div class="state-hint">所有处理均在本地完成，文件不上传云端</div>
+      </div>
+      <div id="noMediaHint" class="state-layer compact hidden">
+        <span>当前字幕未关联媒体，可加载本地视频预览对轴</span>
+        <button class="btn small" id="btnHintLocalVideo">🎞️ 加载本地视频</button>
+      </div>
+    </div>
+
+    <div id="transport">
+      <button class="btn icon" id="btnPlay" title="播放/暂停 (空格)">▶</button>
+      <span id="timeDisplay" class="mono">00:00:00.000 / 00:00:00.000</span>
+      <span class="flex-spacer"></span>
+      <label class="transport-label" title="在画面上显示字幕"><input type="checkbox" id="chkShowSub" checked> 字幕</label>
+      <label class="transport-label">字号
+        <select id="selFontSize">
+          <option value="sm">小</option>
+          <option value="md" selected>中</option>
+          <option value="lg">大</option>
+        </select>
+      </label>
+      <label class="transport-label">倍速
+        <select id="selRate">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="timelinePanel">
+      <div id="timelineWrap">
+        <canvas id="timeline"></canvas>
+        <div id="playhead"></div>
+      </div>
+      <div id="tlScrollbar"><div id="tlThumb"></div></div>
+      <div id="tlHint">点击 seek · 拖动色块移动/改时长 · 滚轮缩放(Ctrl) · 双击复位</div>
+    </div>
+  </section>
+
+  <!-- 右侧：字幕编辑器 -->
+  <section id="editor">
+    <div id="editorToolbar">
+      <button class="btn small" id="btnAdd" title="在播放处插入新字幕">＋ 添加</button>
+      <button class="btn small" id="btnDelete" title="删除选中条目 (Delete)">🗑 删除</button>
+      <button class="btn small" id="btnMerge" title="与下一条合并">⇔ 合并下一条</button>
+      <button class="btn small" id="btnSplit" title="在播放处拆分选中条目">✂ 播放处拆分</button>
+      <button class="btn small" id="btnPunctSplit" title="按中英文标点拆分所有长条目">按标点拆分</button>
+      <button class="btn small" id="btnShift" title="整体平移时间轴">⇄ 平移…</button>
+      <span class="flex-spacer"></span>
+      <span id="stats" class="stats"></span>
+    </div>
+    <div class="cue-row cue-header">
+      <span>#</span><span>开始时间</span><span>结束时间</span><span>时长</span><span>字幕文本</span><span></span>
+    </div>
+    <div id="cueList"></div>
+    <div id="listEmpty" class="hidden">暂无字幕条目</div>
+  </section>
+</main>
+
+<!-- 语音识别弹窗 -->
+<div class="modal-mask hidden" id="recognizeModal">
+  <div class="modal">
+    <div class="modal-title">🎙️ 语音识别生成字幕</div>
+    <div id="recDrop" class="drop-zone">
+      <div class="drop-icon">📹</div>
+      <div class="drop-main">点击选择或拖入视频 / 音频文件</div>
+      <div class="drop-hint">支持 mp4 / mov / mkv / webm / mp3 / wav / m4a …</div>
+      <div class="drop-file hidden" id="recFileName"></div>
+    </div>
+    <div class="form-grid">
+      <label class="form-label">识别模型
+        <select id="selModel"></select>
+      </label>
+      <label class="form-label">语言
+        <select id="selLanguage"></select>
+      </label>
+      <label class="form-label">任务
+        <select id="selTask"></select>
+      </label>
+    </div>
+    <div class="rec-note">首次使用所选模型需联网下载（国内网络自动使用 hf-mirror 镜像）；识别全程在本机 CPU 完成，文件不会外传。</div>
+    <div id="recProgressWrap" class="hidden">
+      <div class="progress-bar"><div id="recProgressBar"></div></div>
+      <div id="recStatus" class="rec-status">准备中…</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="btnRecCancel">取消</button>
+      <button class="btn primary" id="btnRecStart" disabled>开始识别</button>
+    </div>
+  </div>
+</div>
+
+<!-- 整体平移弹窗 -->
+<div class="modal-mask hidden" id="shiftModal">
+  <div class="modal narrow">
+    <div class="modal-title">⇄ 整体平移时间轴</div>
+    <div class="form-grid single">
+      <label class="form-label">平移量（秒，负数表示提前）
+        <input type="number" id="shiftOffset" value="0" step="0.1">
+      </label>
+      <label class="form-label">应用范围
+        <select id="shiftScope">
+          <option value="all" selected>全部字幕</option>
+          <option value="from">从选中条目开始</option>
+        </select>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="btnShiftCancel">取消</button>
+      <button class="btn primary" id="btnShiftApply">应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- 帮助弹窗 -->
+<div class="modal-mask hidden" id="helpModal">
+  <div class="modal">
+    <div class="modal-title">⌨️ 快捷键与使用说明</div>
+    <div class="help-grid">
+      <div>
+        <div class="help-head">播放</div>
+        <div class="help-row"><kbd>空格</kbd> 播放 / 暂停</div>
+        <div class="help-row"><kbd>←</kbd> <kbd>→</kbd> 快退 / 快进 2 秒（Shift 为 10 秒）</div>
+        <div class="help-row"><kbd>Enter</kbd> 播放选中字幕段</div>
+      </div>
+      <div>
+        <div class="help-head">对轴</div>
+        <div class="help-row"><kbd>[</kbd> 选中条开始时间 = 播放处</div>
+        <div class="help-row"><kbd>]</kbd> 选中条结束时间 = 播放处</div>
+        <div class="help-row">时间轴上拖动色块可移动 / 改时长</div>
+      </div>
+      <div>
+        <div class="help-head">编辑</div>
+        <div class="help-row"><kbd>Delete</kbd> 删除选中条目</div>
+        <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>Ctrl</kbd>+<kbd>Y</kbd> 重做</div>
+        <div class="help-row">双击字幕行：跳转并播放该段</div>
+      </div>
+      <div>
+        <div class="help-head">提示</div>
+        <div class="help-row">编辑内容自动保存，刷新不丢失</div>
+        <div class="help-row">红色条目表示与上一条时间重叠</div>
+        <div class="help-row">也可把文件直接拖入窗口</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" id="btnHelpClose">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<input type="file" id="fileRecognize" accept="video/*,audio/*" class="hidden">
+<input type="file" id="fileImport" accept=".srt,.vtt" class="hidden">
+<input type="file" id="fileLocalVideo" accept="video/*,audio/*" class="hidden">
+
+<script src="/static/app.js"></script>
+</body>
+</html>

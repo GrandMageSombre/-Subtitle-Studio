@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+faster-whisper>=1.0
+# PyAV 19 移除了 av.open 的 metadata_errors 参数，faster-whisper 1.2.x 尚不兼容；
+# 钉在 <19（应用内另有运行时兼容补丁兜底）
+av>=14.4,<19
