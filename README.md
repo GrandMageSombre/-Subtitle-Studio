@@ -136,28 +136,37 @@ faster_whisper 的二进制与 VAD 模型数据，排除了 torch 等无关重�
 ## 六、项目结构
 
 ```
-subtitle-studio/
+Subtitle Studio/
 ├── app.py                  # 启动入口（自动打开浏览器）
 ├── start.bat               # Windows 源码模式一键启动
 ├── build.bat               # Windows 一键打包 exe
 ├── subtitle_studio.spec    # PyInstaller 打包配置
 ├── requirements.txt        # 运行依赖
-├── requirements-dev.txt    # 测试依赖
-├── backend/
-│   ├── main.py             # FastAPI 路由（识别/导入导出/媒体流）
-│   ├── asr.py              # faster-whisper 封装 + 按标点断句
-│   ├── srt.py              # SRT/VTT/TXT/JSON 解析与序列化
-│   └── jobs.py             # 任务管理（内存态 + 磁盘持久化）
-├── static/
-│   ├── index.html          # 页面结构
-│   ├── style.css           # 浅色主题样式
-│   └── app.js              # 编辑器 / 时间轴 / 播放器联动逻辑
-└── tests/
-    ├── gen_vectors.py      # 测试向量生成器（代码生成，可复现）
-    ├── test_formats.py     # 字幕格式解析/序列化测试
-    ├── test_asr.py         # 断句逻辑测试（合成词级时间戳）
-    └── test_e2e.py         # 端到端测试（真实服务 + TTS 音频）
+├── requirements-dev.txt    # 测试 / 打包依赖
+├── backend/                # FastAPI 后端
+│   ├── main.py             #   路由：识别 / 导入导出 / 媒体流
+│   ├── asr.py              #   faster-whisper 封装 + 按标点断句
+│   ├── srt.py              #   SRT/VTT/TXT/JSON 解析与序列化
+│   └── jobs.py             #   任务管理（内存态 + 原子落盘）
+├── static/                 # 前端（零依赖，无构建步骤）
+│   ├── index.html          #   页面结构
+│   ├── style.css           #   浅色主题样式
+│   └── app.js              #   编辑器 / 时间轴 / 播放器联动逻辑
+├── tests/                  # 测试
+│   ├── gen_vectors.py      #   测试向量生成器（代码生成，可复现）
+│   ├── test_formats.py     #   字幕格式解析 / 序列化
+│   ├── test_asr.py         #   断句逻辑（合成词级时间戳）
+│   ├── test_consistency.py #   前后端一致性守卫（DOM id / 标点集）
+│   ├── test_e2e.py         #   端到端（真实服务 + TTS 语音）
+│   ├── test_ui_logic.py    #   前端交互逻辑（pytest 包装）
+│   └── ui_logic_test.cjs   #   时间轴交互回归（Node + DOM 桩）
+├── docs/reviews/           # 代码审查报告归档
+├── data/                   # 运行时数据：媒体与字幕任务（自动创建，已忽略）
+└── dist/                   # 打包产物 字幕工坊.exe（已忽略）
 ```
+
+**文档**：使用说明见本文件 · 版本历史见 [版本说明.md](版本说明.md) ·
+每轮代码审查报告见 [docs/reviews/](docs/reviews/)。
 
 ## 七、开发与测试
 
