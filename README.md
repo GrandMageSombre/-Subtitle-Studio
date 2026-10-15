@@ -13,13 +13,31 @@
 
 ## 一、快速开始
 
-### 环境要求
+### 方式 A：打包版（推荐，无需安装 Python）
+
+1. 获取 `dist/字幕工坊.exe`（约 100MB 单文件，仓库 Release 或自行打包，见下文）
+2. **双击 `字幕工坊.exe`**，浏览器会自动打开 **http://127.0.0.1:8000**
+3. 首次识别时自动下载所选模型（国内自动走 hf-mirror 镜像），之后离线可用
+
+> - 黑色控制台窗口显示服务日志，**关闭它即停止服务**，请勿关闭
+> - 单文件版每次启动会解压到系统临时目录（实测冷启动约 1~2 秒）
+> - 识别任务与字幕保存在 exe 同级 `data/` 目录（便携模式）；若 exe 放在
+>   `Program Files` 等不可写位置，会自动改用 `%LOCALAPPDATA%\SubtitleStudio\data`
+>   （启动横幅会打印实际路径，也可用环境变量 `SUBTITLE_STUDIO_DATA` 指定）
+> - 端口被占用时自动顺延（8000 → 8013…），双击两次不会冲突
+> - 杀毒软件可能对 PyInstaller 单文件版误报，请添加信任
+> - 想要「免解压、启动更快」的目录版：把 `subtitle_studio.spec` 顶部的
+>   `ONE_FILE` 改为 `False` 重新构建即可（产物为 `dist/字幕工坊/字幕工坊.exe`）
+
+### 方式 B：源码运行
+
+#### 环境要求
 
 - Python 3.10+（开发验证环境为 3.13）
 - Windows / macOS / Linux 均可
 - 无需 ffmpeg（音频解码由内置 PyAV 完成）
 
-### 安装与启动
+#### 安装与启动
 
 ```bash
 # 1. 安装依赖
@@ -34,6 +52,26 @@ Windows 用户也可直接双击 `start.bat`。
 启动后浏览器打开 **http://127.0.0.1:8000** 即可使用。
 
 > 修改端口：`set PORT=9000 && python app.py`（Linux/macOS 用 `PORT=9000 python app.py`）
+> 端口被占用会自动顺延；禁止自动开浏览器：`set SUBTITLE_STUDIO_NO_BROWSER=1 && python app.py`
+> 指定数据目录：`set SUBTITLE_STUDIO_DATA=D:\SubtitleStudio\data && python app.py`
+
+### 自行打包 exe
+
+```bat
+build.bat
+```
+
+或手动：
+
+```bash
+pip install pyinstaller
+python -m PyInstaller subtitle_studio.spec --noconfirm --clean
+```
+
+产物为 `dist/字幕工坊.exe`（单文件，约 100MB）。
+打包配置见 `subtitle_studio.spec`：已收集 ctranslate2 / onnxruntime / av / tokenizers /
+faster_whisper 的二进制与 VAD 模型数据，排除了 torch 等无关重依赖，
+并针对安全沙箱环境把 PyInstaller 末尾的「截断重写 exe」改为「原地重写」。
 
 ## 二、使用流程
 
@@ -98,8 +136,10 @@ Windows 用户也可直接双击 `start.bat`。
 
 ```
 subtitle-studio/
-├── app.py                  # 启动入口
-├── start.bat               # Windows 一键启动
+├── app.py                  # 启动入口（自动打开浏览器）
+├── start.bat               # Windows 源码模式一键启动
+├── build.bat               # Windows 一键打包 exe
+├── subtitle_studio.spec    # PyInstaller 打包配置
 ├── requirements.txt        # 运行依赖
 ├── requirements-dev.txt    # 测试依赖
 ├── backend/

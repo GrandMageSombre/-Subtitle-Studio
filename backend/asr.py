@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import threading
+import time
 import urllib.request
 from typing import Callable
 
@@ -21,18 +23,52 @@ from typing import Callable
 # ---------------------------------------------------------------------------
 
 
+#: 探测缓存：文件 + 有效期（避免每次启动都阻塞 4 秒网络探测）
+_PROBE_CACHE_FILE = os.path.join(tempfile.gettempdir(), "subtitle_studio_hf_probe")
+_PROBE_TTL_SECONDS = 24 * 3600
+
+
+def _read_probe_cache() -> str | None:
+    """读取探测缓存："" 表示直连可用，非空为应使用的镜像地址；无有效缓存返回 None。"""
+    try:
+        with open(_PROBE_CACHE_FILE, encoding="utf-8") as f:
+            ts, endpoint = f.read().strip().split("\n", 1)
+        if time.time() - float(ts) < _PROBE_TTL_SECONDS:
+            return endpoint
+    except Exception:  # noqa: BLE001  缓存缺失或损坏则忽略
+        pass
+    return None
+
+
+def _write_probe_cache(endpoint: str) -> None:
+    try:
+        with open(_PROBE_CACHE_FILE, "w", encoding="utf-8") as f:
+            f.write(f"{time.time():.0f}\n{endpoint}")
+    except OSError:
+        pass
+
+
 def _ensure_hf_endpoint() -> None:
     """国内网络无法直连 huggingface.co 时切换到 hf-mirror 镜像。
 
     镜像站不支持 Xet 存储后端（cas-server.xethub.hf.co 会 401），
     因此回退镜像时同步禁用 Xet。用户已显式设置 HF_ENDPOINT 时尊重用户设置。
+    探测结果缓存 24 小时（``%TEMP%/subtitle_studio_hf_probe``），
+    避免每次启动都阻塞 4 秒——打包版冷启动尤其明显。
     """
     if os.environ.get("HF_ENDPOINT"):
         return
-    try:
-        urllib.request.urlopen("https://huggingface.co", timeout=4)
-    except Exception:
-        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    endpoint = _read_probe_cache()
+    if endpoint is None:
+        try:
+            urllib.request.urlopen("https://huggingface.co", timeout=4)
+            endpoint = ""
+        except Exception:  # noqa: BLE001  直连失败即判定需要镜像
+            endpoint = "https://hf-mirror.com"
+        _write_probe_cache(endpoint)
+    if endpoint:
+        os.environ["HF_ENDPOINT"] = endpoint
+        # 镜像不支持 Xet 存储后端（cas-server.xethub.hf.co 会 401）
         os.environ["HF_HUB_DISABLE_XET"] = "1"
 
 

@@ -11,14 +11,68 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
+import sys
+import tempfile
 import threading
 import time
 import uuid
 
+logger = logging.getLogger("subtitle-studio.jobs")
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+
+
+def _resolve_data_dir() -> str:
+    """定位可写的 data 目录。
+
+    优先级：
+    1. 环境变量 ``SUBTITLE_STUDIO_DATA``（显式指定，最优先）
+    2. 源码运行：项目目录下的 ``data/``
+    3. 打包运行：exe 同级 ``data/``（便携模式）
+    4. ``%LOCALAPPDATA%/SubtitleStudio/data``
+    5. 系统临时目录（最后兜底，会打告警：清理临时目录会丢数据）
+    """
+    override = os.environ.get("SUBTITLE_STUDIO_DATA")
+    if override:
+        os.makedirs(override, exist_ok=True)
+        return override
+
+    if not getattr(sys, "frozen", False):
+        return os.path.join(BASE_DIR, "data")
+
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "data"),
+        os.path.join(
+            os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+            "SubtitleStudio",
+            "data",
+        ),
+        os.path.join(tempfile.gettempdir(), "SubtitleStudio", "data"),
+    ]
+    for index, candidate in enumerate(candidates):
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            probe = os.path.join(candidate, ".write_test")
+            with open(probe, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(probe)
+            return candidate
+        except OSError:
+            if index < len(candidates) - 1:
+                logger.warning("数据目录不可写，尝试下一个：%s", candidate)
+    logger.warning(
+        "所有候选数据目录均不可写，已退到系统临时目录 %s；"
+        "清理临时目录会导致识别任务与字幕丢失，请设置环境变量 "
+        "SUBTITLE_STUDIO_DATA 指向一个固定目录。",
+        candidates[-1],
+    )
+    return candidates[-1]
+
+
+DATA_DIR = _resolve_data_dir()
 JOBS_DIR = os.path.join(DATA_DIR, "jobs")
 
 
@@ -103,9 +157,13 @@ class JobManager:
                 continue
 
     def _persist(self, job: Job) -> None:
+        """原子写盘：先写 .tmp 再 os.replace，避免异常退出留下半截 JSON。"""
         try:
             os.makedirs(job.dir, exist_ok=True)
-            with open(os.path.join(job.dir, "job.json"), "w", encoding="utf-8") as f:
+            job_path = os.path.join(job.dir, "job.json")
+            seg_path = os.path.join(job.dir, "segments.json")
+            job_tmp, seg_tmp = job_path + ".tmp", seg_path + ".tmp"
+            with open(job_tmp, "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "id": job.id,
@@ -120,10 +178,13 @@ class JobManager:
                     ensure_ascii=False,
                     indent=2,
                 )
-            with open(os.path.join(job.dir, "segments.json"), "w", encoding="utf-8") as f:
-                json.dump(job.segments, f, ensure_ascii=False)
-        except OSError:
-            pass
+            # segments.json 用紧凑格式：条目多时显著减小写盘体积与耗时
+            with open(seg_tmp, "w", encoding="utf-8") as f:
+                json.dump(job.segments, f, ensure_ascii=False, separators=(",", ":"))
+            os.replace(seg_tmp, seg_path)
+            os.replace(job_tmp, job_path)
+        except OSError as exc:
+            logger.warning("任务 %s 持久化失败：%s", job.id, exc)
 
     # -- 查询 --------------------------------------------------------------
 

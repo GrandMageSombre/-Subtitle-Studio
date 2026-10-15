@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 import threading
 import urllib.parse
 
@@ -18,7 +19,20 @@ from .jobs import JobManager
 logger = logging.getLogger("subtitle-studio")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+
+def _resolve_static_dir() -> str:
+    """定位 static 目录：源码运行为项目内目录；PyInstaller 打包后在
+    ``sys._MEIPASS``（onedir 下即 exe 所在目录）内。"""
+    if getattr(sys, "frozen", False):
+        return os.path.join(
+            getattr(sys, "_MEIPASS", None) or os.path.dirname(sys.executable),
+            "static",
+        )
+    return os.path.join(BASE_DIR, "static")
+
+
+STATIC_DIR = _resolve_static_dir()
 
 #: 常见媒体扩展名 -> MIME（浏览器 <video>/<audio> 可播放的子集优先）
 MEDIA_TYPES = {
