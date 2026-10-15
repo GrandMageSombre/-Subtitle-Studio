@@ -234,6 +234,8 @@ def normalize_cues(cues: Iterable[Cue]) -> list[Cue]:
             end = float(cue["end"])
         except (KeyError, TypeError, ValueError):
             continue
+        if not (math.isfinite(start) and math.isfinite(end)):
+            continue
         text = _clean_text(cue.get("text", ""))
         if not text:
             continue

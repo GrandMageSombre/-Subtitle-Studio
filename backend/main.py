@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import sys
@@ -95,6 +96,8 @@ class SegmentsBody(BaseModel):
                 text = str(item.get("text", ""))
             except (KeyError, TypeError, ValueError):
                 raise ValueError("字幕条目格式不正确，需要 start/end/text 字段")
+            if not (math.isfinite(start) and math.isfinite(end)):
+                raise ValueError("字幕时间必须是有限数值")
             start = max(0.0, start)
             end = max(end, start + 0.001)
             cleaned.append({"start": round(start, 3), "end": round(end, 3), "text": text})
@@ -266,8 +269,13 @@ def save_segments(job_id: str, body: SegmentsBody):
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str):
-    if not manager.delete(job_id):
+    job = manager.get(job_id)
+    if job is None:
         raise HTTPException(404, "任务不存在或已被删除")
+    if job.status in ("queued", "running"):
+        # 识别中删除会留残缺目录（Windows 下媒体文件被占用删不掉）且识别线程空跑
+        raise HTTPException(409, "识别任务进行中，请等待完成后再删除")
+    manager.delete(job_id)
     return {"ok": True}
 
 
@@ -293,6 +301,8 @@ async def import_subtitle(file: UploadFile = File(...)):
     filename = os.path.basename(file.filename or "subtitles.srt")
     job = manager.create("import", filename)
     manager.set_segments(job.id, cues)
+    # 导入即完成：置为 done，避免永远停留 queued 导致每次重启被误判为中断任务
+    manager.set_status(job.id, "done", "导入完成")
     return {"job_id": job.id, "count": len(cues)}
 
 

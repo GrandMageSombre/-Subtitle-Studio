@@ -135,6 +135,8 @@ function afterStructuralChange() {
   computeOverlaps();
   renderList();
   drawTimeline();
+  // 撤销/重做可能只改文本不换索引，updateActiveCue 不会触发，须主动刷新叠加层
+  updateOverlay();
   updateStats();
   scheduleSave();
 }
@@ -633,7 +635,17 @@ window.addEventListener("beforeunload", () => {
 
 /* ---------------- 任务加载 / 轮询 ---------------- */
 
+// 切换/加载任务前调用：取消待执行的防抖保存并重置保存状态，
+// 避免旧任务的字幕被写入新任务 id
+function cancelPendingSave() {
+  clearTimeout(state.saveTimer);
+  state.saveTimer = null;
+  state.saving = false;
+  state.savePending = false;
+}
+
 function loadJobData(job) {
+  cancelPendingSave();
   state.job = { id: job.id, kind: job.kind, filename: job.filename, has_media: job.has_media };
   state.cues = (job.segments || []).map((c) => ({ start: c.start, end: c.end, text: c.text }));
   state.selected = state.cues.length ? 0 : -1;
@@ -815,6 +827,19 @@ window.addEventListener("pointermove", (e) => {
   drawTimeline();
 });
 
+// 真实拖动（move/resize）结束后的收尾：排序维持「有序」不变量并调度保存。
+// pointerup 与失焦/取消兜底共用，避免拖动后失焦导致改动不落盘。
+function commitDrag() {
+  const before = state.cues.map((c) => c.start).join(",");
+  state.cues.sort((a, b) => a.start - b.start);
+  if (state.cues.map((c) => c.start).join(",") !== before) {
+    state.selected = state.cues.findIndex((c) => c === drag.cueRef);
+    renderList();
+  }
+  updateStats();
+  scheduleSave();
+}
+
 window.addEventListener("pointerup", () => {
   if (!drag) return;
   if (drag.mode === "seek") {
@@ -825,23 +850,22 @@ window.addEventListener("pointerup", () => {
   } else {
     // 真实拖动结束：拖动可能打乱时间顺序，按开始时间排序维持「有序」不变量
     // （重叠检测与播放定位都依赖该不变量）
-    const before = state.cues.map((c) => c.start).join(",");
-    state.cues.sort((a, b) => a.start - b.start);
-    if (state.cues.map((c) => c.start).join(",") !== before) {
-      state.selected = state.cues.findIndex((c) => c === drag.cueRef);
-      renderList();
-    }
-    updateStats();
-    scheduleSave();
+    commitDrag();
   }
   drag = null;
   canvas.style.cursor = "";  // 复位为 CSS 默认（crosshair）
 });
 
-// 兜底：窗口失焦或指针捕获被系统取消时放弃当前拖拽，
-// 避免回到窗口后“无按键移动鼠标”继续改字幕
-window.addEventListener("blur", () => { drag = null; canvas.style.cursor = ""; });
-window.addEventListener("pointercancel", () => { drag = null; canvas.style.cursor = ""; });
+// 兜底：窗口失焦或指针捕获被系统取消时结束当前拖拽。
+// 已真实拖动（move/resize）的改动必须照常排序+保存，仅丢弃 seek/pending。
+function cancelDrag() {
+  if (!drag) return;
+  if (drag.mode !== "seek" && drag.mode !== "pending") commitDrag();
+  drag = null;
+  canvas.style.cursor = "";
+}
+window.addEventListener("blur", cancelDrag);
+window.addEventListener("pointercancel", cancelDrag);
 
 canvas.addEventListener("mousemove", (e) => {
   if (drag) return;
@@ -1024,6 +1048,8 @@ $("btnHelpClose").addEventListener("click", () => hideModal("helpModal"));
 /* ---------------- 语音识别 ---------------- */
 
 function openRecognize() {
+  // 识别任务串行执行：进行中禁止再开新任务，避免任务切换覆盖编辑状态
+  if (state.pollTimer) { toast("已有识别任务进行中，请等待完成", "error"); return; }
   state.recFile = null;
   $("recFileName").classList.add("hidden");
   $("btnRecStart").disabled = true;
@@ -1070,6 +1096,15 @@ $("btnRecStart").addEventListener("click", async () => {
   $("recProgressBar").style.width = "5%";
   try {
     const { job_id } = await api("/api/transcribe", { method: "POST", body: fd });
+    // 切换到新任务：取消旧任务的待保存，清空编辑态（旧任务数据仍在服务端，重启可恢复）
+    cancelPendingSave();
+    state.cues = [];
+    state.selected = -1;
+    state.history.length = 0;
+    state.future.length = 0;
+    renderList();
+    drawTimeline();
+    updateStats();
     state.job = { id: job_id, kind: "transcribe", filename: state.recFile.name, has_media: true };
     lsSet(LS_LAST_JOB, job_id);
     video.src = `/api/media/${job_id}`;
@@ -1095,6 +1130,8 @@ $("fileImport").addEventListener("change", async (e) => {
   const f = e.target.files[0];
   e.target.value = "";
   if (!f) return;
+  // 识别进行中导入会切换任务并覆盖编辑状态，直接拒绝
+  if (state.pollTimer) { toast("识别进行中，请等待完成后再导入字幕", "error"); return; }
   const fd = new FormData();
   fd.append("file", f);
   try {
@@ -1162,11 +1199,12 @@ document.addEventListener("keydown", (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
   const mod = e.ctrlKey || e.metaKey;
 
+  // 输入框内放行 Ctrl+Z/Y，保留原生文本撤销
+  if (typing) return;
   if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); return; }
   if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
     e.preventDefault(); redo(); return;
   }
-  if (typing) return;
 
   switch (e.code) {
     case "Space": e.preventDefault(); togglePlay(); break;

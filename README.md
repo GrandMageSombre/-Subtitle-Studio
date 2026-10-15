@@ -144,6 +144,7 @@ Subtitle Studio/
 ├── requirements.txt        # 运行依赖
 ├── requirements-dev.txt    # 测试 / 打包依赖
 ├── backend/                # FastAPI 后端
+│   ├── __init__.py         #   包标识
 │   ├── main.py             #   路由：识别 / 导入导出 / 媒体流
 │   ├── asr.py              #   faster-whisper 封装 + 按标点断句
 │   ├── srt.py              #   SRT/VTT/TXT/JSON 解析与序列化
@@ -162,7 +163,8 @@ Subtitle Studio/
 │   └── ui_logic_test.cjs   #   时间轴交互回归（Node + DOM 桩）
 ├── docs/reviews/           # 代码审查报告归档
 ├── data/                   # 运行时数据：媒体与字幕任务（自动创建，已忽略）
-└── dist/                   # 打包产物 字幕工坊.exe（已忽略）
+├── dist/                   # 打包产物 字幕工坊.exe（已忽略）
+└── LICENSE                 # MIT 许可证
 ```
 
 **文档**：使用说明见本文件 · 版本历史见 [版本说明.md](版本说明.md) ·
@@ -210,7 +212,7 @@ A: 识别上传默认上限 10GB（环境变量 `MAX_UPLOAD_MB` 可调），字�
 ## 十、路线图（后续版本）
 
 - [ ] 说话人分离（多人对话区分）
-- [ ] 字幕翻译（中英互译，接入本地/云端翻译）
+- [ ] 字幕翻译（中英互译，接入本地/云端翻译；区别于已实现的 Whisper 内置「翻译成英语」）
 - [ ] 视频压制硬字幕（FFmpeg 烧录）
 - [ ] 波形图显示与音频抽取
 - [ ] 项目文件保存/恢复（.ssproj）

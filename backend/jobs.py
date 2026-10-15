@@ -142,16 +142,16 @@ class JobManager:
                     data.get("settings"),
                     data.get("created_at"),
                 )
-                if job.status in ("queued", "running"):
-                    job.status = "error"
-                    job.message = "服务曾中断，该识别任务未完成"
-                    # 落盘，避免每次启动都重复翻转且丢失中断原因
-                    self._jobs[job.id] = job
-                    self._persist(job)
                 seg_file = os.path.join(job.dir, "segments.json")
                 if os.path.isfile(seg_file):
                     with open(seg_file, encoding="utf-8") as f:
                         job.segments = json.load(f)
+                if job.status in ("queued", "running"):
+                    job.status = "error"
+                    job.message = "服务曾中断，该识别任务未完成"
+                    # 落盘，避免每次启动都重复翻转且丢失中断原因；
+                    # 须在读取 segments.json 之后持久化，否则空 segments 会覆写已有字幕
+                    self._persist(job)
                 self._jobs[job.id] = job
             except Exception:
                 continue
