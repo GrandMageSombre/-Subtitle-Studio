@@ -67,12 +67,13 @@
       <span id="timeDisplay" class="mono">00:00:00.000 / 00:00:00.000</span>
       <span class="flex-spacer"></span>
       <label class="transport-label" title="在画面上显示字幕"><input type="checkbox" id="chkShowSub" checked> 字幕</label>
-      <label class="transport-label">字号
-        <select id="selFontSize">
-          <option value="sm">小</option>
-          <option value="md" selected>中</option>
-          <option value="lg">大</option>
-        </select>
+      <label class="transport-label slider-label" title="字幕字号（像素），拖动即时预览">字号
+        <input type="range" id="rngFontSize" min="12" max="44" step="1" value="19">
+        <span id="lblFontSize" class="range-value">19px</span>
+      </label>
+      <label class="transport-label slider-label" title="字幕距画面底部的距离（百分比）">位置
+        <input type="range" id="rngSubPos" min="0" max="90" step="1" value="7">
+        <span id="lblSubPos" class="range-value">7%</span>
       </label>
       <label class="transport-label">倍速
         <select id="selRate">
@@ -184,7 +185,8 @@
         <div class="help-head">对轴</div>
         <div class="help-row"><kbd>[</kbd> 选中条开始时间 = 播放处</div>
         <div class="help-row"><kbd>]</kbd> 选中条结束时间 = 播放处</div>
-        <div class="help-row">时间轴上拖动色块可移动 / 改时长</div>
+        <div class="help-row">时间轴：<b>单击色块跳转</b>（播放中选点）；<b>按住拖动</b>移动整条；拖边缘改时长</div>
+        <div class="help-row">字幕「字号 / 位置」滑块可实时调整画面叠加层</div>
       </div>
       <div>
         <div class="help-head">编辑</div>

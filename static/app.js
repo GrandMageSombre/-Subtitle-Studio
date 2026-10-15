@@ -344,14 +344,99 @@ function updateTimeDisplay() {
   $("timeDisplay").textContent = `${fmtTime(video.currentTime)} / ${fmtTime(d)}`;
 }
 
+//: 字幕叠加层样式（字号 px / 距底部百分比），持久化到 localStorage
+const LS_SUB_FONT = "subtitle-studio:fontSize";
+const LS_SUB_POS = "subtitle-studio:subPos";
+//: 预览自动隐藏时长（拖动滑块时）
+const PREVIEW_HIDE_MS = 1800;
+
+//: localStorage 安全读写：隐私模式/禁用存储时静默降级，避免初始化崩溃白屏
+function lsGet(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (_) {
+    /* 隐私模式等场景下忽略 */
+  }
+}
+
+const subStyle = {
+  fontSize: Number(lsGet(LS_SUB_FONT, "")) || 19,
+  bottomPct: Number(lsGet(LS_SUB_POS, "")) || 7,
+};
+let subPreviewTimer = null;
+
+function applySubStyle() {
+  overlayEl.style.fontSize = subStyle.fontSize + "px";
+  overlayEl.style.bottom = subStyle.bottomPct + "%";
+  $("lblFontSize").textContent = subStyle.fontSize + "px";
+  $("lblSubPos").textContent = subStyle.bottomPct + "%";
+  $("rngFontSize").setAttribute("aria-valuetext", subStyle.fontSize + "像素");
+  $("rngSubPos").setAttribute("aria-valuetext", "距底部 " + subStyle.bottomPct + "%");
+}
+
+function persistSubStyle() {
+  lsSet(LS_SUB_FONT, String(subStyle.fontSize));
+  lsSet(LS_SUB_POS, String(subStyle.bottomPct));
+}
+
+function showOverlayText(text) {
+  overlayEl.textContent = text;
+  overlayEl.classList.remove("hidden");
+}
+
+function hideOverlay() {
+  overlayEl.classList.add("hidden");
+}
+
+function previewSubStyle() {
+  // 调节滑块时即时预览：优先当前播放位置字幕，其次选中/第一条；都没有则用占位文本
+  const i = state.activeIdx >= 0 ? state.activeIdx
+    : (state.selected >= 0 ? state.selected : (state.cues.length ? 0 : -1));
+  const text = i >= 0 ? state.cues[i].text : "字幕预览效果";
+  showOverlayText(text);
+  clearTimeout(subPreviewTimer);
+  subPreviewTimer = setTimeout(() => {
+    // 预览结束：仅在「无有效字幕」或「未勾选显示」时隐藏，避免覆盖正常显示
+    if (state.activeIdx < 0 || !$("chkShowSub").checked) hideOverlay();
+  }, PREVIEW_HIDE_MS);
+}
+
+function bindSubStyleControls() {
+  const fs = $("rngFontSize");
+  const pos = $("rngSubPos");
+  fs.value = String(subStyle.fontSize);
+  pos.value = String(subStyle.bottomPct);
+  fs.addEventListener("input", () => {
+    subStyle.fontSize = Number(fs.value);
+    applySubStyle();
+    previewSubStyle();
+  });
+  pos.addEventListener("input", () => {
+    subStyle.bottomPct = Number(pos.value);
+    applySubStyle();
+    previewSubStyle();
+  });
+  for (const el of [fs, pos]) {
+    el.addEventListener("change", persistSubStyle);
+  }
+}
+
 function updateOverlay() {
   const i = state.activeIdx;
   const show = i >= 0 && $("chkShowSub").checked && !!video.src;
   if (show) {
-    overlayEl.textContent = state.cues[i].text;
-    overlayEl.className = "sz-" + $("selFontSize").value;
+    showOverlayText(state.cues[i].text);
   } else {
-    overlayEl.className = "hidden";
+    hideOverlay();
   }
 }
 
@@ -554,8 +639,7 @@ function loadJobData(job) {
   state.selected = state.cues.length ? 0 : -1;
   state.history.length = 0;
   state.future.length = 0;
-  localStorage.setItem(LS_LAST_JOB, job.id);
-  if (job.has_media) {
+  lsSet(LS_LAST_JOB, job.id);  if (job.has_media) {
     // 切回服务端媒体时释放本地 object URL，避免泄漏
     if (state.localVideoUrl) {
       URL.revokeObjectURL(state.localVideoUrl);
@@ -655,39 +739,62 @@ function hitTestCue(t, x) {
 function updateCursor(x) {
   const t = tlT(x);
   const hit = hitTestCue(t, x);
-  canvas.style.cursor = !hit ? "crosshair" : hit.edge ? "ew-resize" : "grab";
+  // 色块主体：点击跳转（pointer）；边缘：拖改时长（ew-resize）
+  canvas.style.cursor = !hit ? "crosshair" : hit.edge ? "ew-resize" : "pointer";
 }
 
-canvas.addEventListener("mousedown", (e) => {
+//: 拖动阈值（像素）：超过才算拖动，否则视为点击。
+//: 避免「想跳转到字幕处」变成「挪动了字幕」。
+const DRAG_THRESHOLD_PX = 5;
+
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;  // 仅主键（鼠标左键 / 触摸）
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
   const t = tlT(x);
   const hit = hitTestCue(t, x);
   if (!hit) {
-    drag = { mode: "seek", t, x0: x, moved: false };
+    // 空白区域：按下即准备跳转（松手时跳到最终位置）
+    drag = { mode: "seek", t, x0: x, y0: y };
     return;
   }
+  // 色块：先选中；按住拖动超过阈值才进入移动/改时长，
+  // 未超过阈值则松手时跳转到点击处（播放中选点的主要路径）
   selectCue(hit.idx);
   drag = {
-    mode: hit.edge ? "resize-" + hit.edge : "move",
+    mode: "pending",
+    intent: hit.edge ? "resize-" + hit.edge : "move",
     idx: hit.idx,
+    t,
     t0: t,
+    x0: x,
+    y0: y,
     orig: { ...state.cues[hit.idx] },
     cueRef: state.cues[hit.idx],
     snapTaken: false,
   };
+  // 指针捕获：在窗口外松手也能收到 pointerup，避免“幽灵拖动”
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* 旧浏览器忽略 */ }
+  canvas.style.cursor = drag.intent === "move" ? "grabbing" : "ew-resize";
 });
 
-window.addEventListener("mousemove", (e) => {
+window.addEventListener("pointermove", (e) => {
   if (!drag) return;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
   const t = tlT(x);
-  const cue = state.cues[drag.idx];
   if (drag.mode === "seek") {
-    if (Math.abs(x - drag.x0) > 4) drag.moved = true;
+    drag.t = t;  // 跟随指针，松手跳到最后位置
     return;
   }
+  if (drag.mode === "pending") {
+    // 水平+垂直位移都计入阈值：纯竖向小幅抖动不算拖动
+    if (Math.hypot(x - drag.x0, y - drag.y0) <= DRAG_THRESHOLD_PX) return;
+    drag.mode = drag.intent;  // 超过阈值：升级为拖动
+  }
+  const cue = state.cues[drag.idx];
   if (!cue) { drag = null; return; }
   // 真正发生拖动时才记录撤销快照，避免单击产生空撤销步
   if (!drag.snapTaken) {
@@ -695,8 +802,7 @@ window.addEventListener("mousemove", (e) => {
     drag.snapTaken = true;
   }
   const dt = t - drag.t0;
-  if (drag.mode === "move") {
-    cue.start = round3(Math.max(0, drag.orig.start + dt));
+  if (drag.mode === "move") {    cue.start = round3(Math.max(0, drag.orig.start + dt));
     cue.end = round3(drag.orig.end + dt);
   } else if (drag.mode === "resize-l") {
     cue.start = round3(clamp(drag.orig.start + dt, 0, cue.end - 0.05));
@@ -709,12 +815,15 @@ window.addEventListener("mousemove", (e) => {
   drawTimeline();
 });
 
-window.addEventListener("mouseup", () => {
+window.addEventListener("pointerup", () => {
   if (!drag) return;
-  if (drag.mode === "seek" && !drag.moved) {
+  if (drag.mode === "seek") {
     seekTo(drag.t);
-  } else if (drag.mode !== "seek") {
-    // 拖动可能打乱时间顺序，结束后按开始时间排序，维持「有序」不变量
+  } else if (drag.mode === "pending") {
+    // 色块上单击（未拖动）：跳转到点击处，便于播放中选点
+    seekTo(drag.t);
+  } else {
+    // 真实拖动结束：拖动可能打乱时间顺序，按开始时间排序维持「有序」不变量
     // （重叠检测与播放定位都依赖该不变量）
     const before = state.cues.map((c) => c.start).join(",");
     state.cues.sort((a, b) => a.start - b.start);
@@ -726,7 +835,13 @@ window.addEventListener("mouseup", () => {
     scheduleSave();
   }
   drag = null;
+  canvas.style.cursor = "";  // 复位为 CSS 默认（crosshair）
 });
+
+// 兜底：窗口失焦或指针捕获被系统取消时放弃当前拖拽，
+// 避免回到窗口后“无按键移动鼠标”继续改字幕
+window.addEventListener("blur", () => { drag = null; canvas.style.cursor = ""; });
+window.addEventListener("pointercancel", () => { drag = null; canvas.style.cursor = ""; });
 
 canvas.addEventListener("mousemove", (e) => {
   if (drag) return;
@@ -862,7 +977,6 @@ video.addEventListener("error", () => {
   if (video.src) toast("浏览器无法播放该媒体格式（识别不受影响），可转为 MP4 后预览", "error");
 });
 $("selRate").addEventListener("change", (e) => { video.playbackRate = parseFloat(e.target.value); });
-$("selFontSize").addEventListener("change", updateOverlay);
 $("chkShowSub").addEventListener("change", updateOverlay);
 
 /* ---------------- 工具栏 ---------------- */
@@ -957,7 +1071,7 @@ $("btnRecStart").addEventListener("click", async () => {
   try {
     const { job_id } = await api("/api/transcribe", { method: "POST", body: fd });
     state.job = { id: job_id, kind: "transcribe", filename: state.recFile.name, has_media: true };
-    localStorage.setItem(LS_LAST_JOB, job_id);
+    lsSet(LS_LAST_JOB, job_id);
     video.src = `/api/media/${job_id}`;
     updateStateLayers();
     startPolling(job_id);
@@ -1087,6 +1201,8 @@ async function populateSelects() {
 
 async function init() {
   await populateSelects();
+  applySubStyle();
+  bindSubStyleControls();
   resizeCanvas();
   drawTimeline();
   updateStats();
@@ -1095,7 +1211,7 @@ async function init() {
   ro.observe($("timelineWrap"));
 
   // 恢复上次任务（刷新不丢失）
-  const lastId = localStorage.getItem(LS_LAST_JOB);
+  const lastId = lsGet(LS_LAST_JOB, "");
   if (lastId) {
     try {
       const job = await api(`/api/jobs/${lastId}`);

@@ -199,9 +199,7 @@ input:focus-visible,
   pointer-events: none;
   transition: opacity .08s;
 }
-#subOverlay.sm { font-size: 15px; }
-#subOverlay.md { font-size: 19px; }
-#subOverlay.lg { font-size: 25px; }
+/* 字号与垂直位置由 JS 滑块控制（内联样式），此处仅默认值 */
 
 .state-layer {
   position: absolute;
@@ -251,6 +249,18 @@ input:focus-visible,
   font-size: 12px;
   background: #fff;
   color: var(--text);
+}
+.transport-label.slider-label { gap: 7px; }
+.transport-label input[type="range"] {
+  width: 92px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.range-value {
+  min-width: 36px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 /* ---------- 时间轴 ---------- */
