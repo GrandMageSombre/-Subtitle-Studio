@@ -1,6 +1,7 @@
 data/
 build/
 dist/
+/字幕工坊.exe
 __pycache__/
 *.pyc
 .pytest_cache/

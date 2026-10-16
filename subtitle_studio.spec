@@ -3,10 +3,11 @@
 
 构建：:
 
-    pyinstaller subtitle_studio.spec --noconfirm --clean
+    build.bat    （或：pyinstaller subtitle_studio.spec --noconfirm --clean）
 
-产物：``dist/字幕工坊.exe``（约 100MB 单文件，双击即用；
-首次识别时模型按需下载到用户缓存目录）。
+产物：``字幕工坊.exe``（项目根目录，约 110MB 单文件，双击即用；
+build.bat 会自动把 dist 中间产物移到根目录，使 exe 与 start.bat 同级、
+与源码运行共用同一个 ``data/`` 数据目录，整个文件夹拷贝分发行为一致）。
 
 如需目录版（免解压、启动更快）：把末尾 ``EXE`` 的 ``a.binaries, a.datas``
 两个参数改为 ``[]``，并追加

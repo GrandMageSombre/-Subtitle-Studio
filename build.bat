@@ -1,38 +1,56 @@
 @echo off
-chcp 65001 >nul
 rem ============================================================
-rem  字幕工坊 Subtitle Studio · PyInstaller 打包脚本
-rem  产物：dist\字幕工坊.exe（单文件，约 100MB）
+rem  Subtitle Studio - PyInstaller build script
+rem  Output: project root exe (single file, ~110MB, name per spec)
+rem  The exe sits next to start.bat, so double-clicking the exe
+rem  and running from source share the SAME data\ directory.
+rem  Copy the whole folder to another PC and the behavior is
+rem  identical (portable: data travels with the folder).
+rem  NOTE: keep this file ASCII-only - cmd.exe mis-parses batch
+rem  lines containing non-ASCII text, with or without "chcp 65001".
 rem ============================================================
 cd /d %~dp0
 
 where python >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] 未找到 python，请先安装 Python 3.10+ 并加入 PATH
+    echo [ERROR] python not found. Install Python 3.10+ and add it to PATH.
     pause
     exit /b 1
 )
 
 python -c "import PyInstaller" 2>nul
 if errorlevel 1 (
-    echo [INFO] 正在安装 PyInstaller ...
+    echo [INFO] Installing PyInstaller ...
     python -m pip install pyinstaller
     if errorlevel 1 (
-        echo [ERROR] PyInstaller 安装失败
+        echo [ERROR] Failed to install PyInstaller.
         pause
         exit /b 1
     )
 )
 
-echo [INFO] 开始打包（约需 1-3 分钟）...
+echo [INFO] Building (about 1-3 minutes) ...
 python -m PyInstaller subtitle_studio.spec --noconfirm --clean
 if errorlevel 1 (
-    echo [ERROR] 打包失败，请检查上方日志
+    echo [ERROR] Build failed. Check the log above.
     pause
     exit /b 1
 )
 
+rem Move the artifact to the project root so the data dir (exe-side data\)
+rem matches the source-mode data\ directory. Wildcard avoids non-ASCII here;
+rem the spec builds exactly one exe.
+move /y "dist\*.exe" . >nul
+if errorlevel 1 (
+    echo [ERROR] Cannot move the exe. Is Subtitle Studio still running? Close it and retry.
+    pause
+    exit /b 1
+)
+rem dist is empty now; if it still holds runtime data left by an OLD exe, keep it untouched.
+rd dist 2>nul
+
 echo.
-echo [OK] 打包完成：dist\字幕工坊.exe（单文件，可直接拷贝分发）
-echo      首次识别时模型会自动下载到用户缓存目录。
+echo [OK] Build finished: exe in project root (next to start.bat, single file, portable)
+echo      Data dir: data\ next to the exe (shared by exe and source mode)
+echo      Models are downloaded on first use.
 pause

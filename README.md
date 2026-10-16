@@ -15,14 +15,17 @@
 
 ### 方式 A：打包版（推荐，无需安装 Python）
 
-1. 获取 `dist/字幕工坊.exe`（约 100MB 单文件，仓库 Release 或自行打包，见下文）
+1. 获取 `字幕工坊.exe`（项目根目录，约 110MB 单文件，仓库 Release 或自行打包，见下文）
 2. **双击 `字幕工坊.exe`**，浏览器会自动打开 **http://127.0.0.1:8000**
 3. 首次识别时自动下载所选模型（国内自动走 hf-mirror 镜像），之后离线可用
 
 > - 黑色控制台窗口显示服务日志，**关闭它即停止服务**，请勿关闭
 > - 单文件版每次启动会解压到系统临时目录（实测冷启动约 1~2 秒）
-> - 识别任务与字幕保存在 exe 同级 `data/` 目录（便携模式）；若 exe 放在
->   `Program Files` 等不可写位置，会自动改用 `%LOCALAPPDATA%\SubtitleStudio\data`
+> - 识别任务与字幕保存在 exe 同级 `data/` 目录（便携模式）。exe 默认与
+>   `start.bat` 同在项目根目录，因此**双击 exe 与源码运行共用同一个
+>   `data/`**，整个文件夹拷给别人行为一致，数据随文件夹一起带走；
+>   若 exe 单独放在 `Program Files` 等不可写位置，会自动改用
+>   `%LOCALAPPDATA%\SubtitleStudio\data`
 >   （启动横幅会打印实际路径，也可用环境变量 `SUBTITLE_STUDIO_DATA` 指定）
 > - 端口被占用时自动顺延（8000 → 8013…），双击两次不会冲突
 > - 杀毒软件可能对 PyInstaller 单文件版误报，请添加信任
@@ -68,7 +71,8 @@ pip install pyinstaller
 python -m PyInstaller subtitle_studio.spec --noconfirm --clean
 ```
 
-产物为 `dist/字幕工坊.exe`（单文件，约 100MB）。
+产物为项目根目录 `字幕工坊.exe`（单文件，约 110MB；脚本会自动把 dist 中间产物
+移到根目录并清理，使 exe 与 `start.bat` 同级、共用同一个 `data/` 数据目录）。
 打包配置见 `subtitle_studio.spec`：已收集 ctranslate2 / onnxruntime / av / tokenizers /
 faster_whisper 的二进制与 VAD 模型数据，排除了 torch 等无关重依赖，
 并针对安全沙箱环境把 PyInstaller 末尾的「截断重写 exe」改为「原地重写」。
@@ -166,8 +170,8 @@ Subtitle Studio/
 ├── docs/                   # 项目文档
 │   ├── 版本说明.md          #   版本变更记录
 │   └── reviews/            #   代码 / 文档审查报告归档
+├── 字幕工坊.exe            # 打包产物（build.bat 生成，已忽略）
 ├── data/                   # 运行时数据：媒体与字幕任务（自动创建，已忽略）
-├── dist/                   # 打包产物 字幕工坊.exe（已忽略）
 └── LICENSE                 # MIT 许可证
 ```
 
