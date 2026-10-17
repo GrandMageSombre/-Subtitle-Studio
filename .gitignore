@@ -7,3 +7,5 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .venv/
+# Reasonix 工具运行目录（任务事件流），不属于工程内容
+.reasonix/

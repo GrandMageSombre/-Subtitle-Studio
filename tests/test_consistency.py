@@ -15,14 +15,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASR_PY = os.path.join(ROOT, "backend", "asr.py")
 HTML = os.path.join(ROOT, "static", "index.html")
 JS = os.path.join(ROOT, "static", "app.js")
+DESKTOP_CUES = os.path.join(ROOT, "desktop", "cues.py")
 
 
 def test_punct_set_consistent():
-    """后端 SENT_PUNCT 与前端 splitTextAtPunct 正则必须一致。"""
+    """后端 SENT_PUNCT、前端 splitTextAtPunct、桌面实现三者必须一致。"""
     asr_src = open(ASR_PY, encoding="utf-8").read()
     js_src = open(JS, encoding="utf-8").read()
+    desktop_src = open(DESKTOP_CUES, encoding="utf-8").read()
     assert 'SENT_PUNCT = "。！？；!?;…."' in asr_src, "后端标点集已变更，请同步前端"
     assert "[^。！？；!?;….]+[。！？；!?;….]*" in js_src, "前端标点集已变更，请同步后端"
+    assert 'SENT_PUNCT = "。！？；!?;…."' in desktop_src, "桌面标点集已变更，请同步前后端"
 
 
 def test_js_dom_ids_exist():

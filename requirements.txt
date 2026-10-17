@@ -7,3 +7,6 @@ faster-whisper>=1.0
 av>=14.4,<19
 # 中文字形转换（简 ⇄ 繁），纯 Python 实现，自带词典
 opencc-python-reimplemented>=0.1.7
+# 桌面界面：QWidget 界面 + QtMultimedia 原生播放（Windows 上走 Media Foundation，
+# 能解码 H.264/AAC；Qt WebEngine 的 ffmpeg 构建不含专有编解码器，故不采用）
+PySide6>=6.6

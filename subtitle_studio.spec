@@ -1,13 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置：字幕工坊 Subtitle Studio（单文件模式）。
+"""PyInstaller 打包配置：字幕工坊 Subtitle Studio（单文件窗口程序）。
 
 构建：:
 
     build.bat    （或：pyinstaller subtitle_studio.spec --noconfirm --clean）
 
-产物：``字幕工坊.exe``（项目根目录，约 110MB 单文件，双击即用；
+产物：``字幕工坊.exe``（项目根目录，单文件，双击直接打开原生窗口；
+不再弹控制台——日志写入 ``<数据目录>/logs/subtitle-studio.log``；
 build.bat 会自动把 dist 中间产物移到根目录，使 exe 与 start.bat 同级、
-与源码运行共用同一个 ``data/`` 数据目录，整个文件夹拷贝分发行为一致）。
+与源码运行共用同一个 ``data/`` 数据目录）。
+
+界面用 PySide6（QWidget + QtMultimedia），**不包含浏览器内核**：
+Qt WebEngine 被显式排除（内置 Chromium 约 150MB，且其 ffmpeg 构建不含
+H.264/AAC，无法预览 mp4）。
 
 如需目录版（免解压、启动更快）：把末尾 ``EXE`` 的 ``a.binaries, a.datas``
 两个参数改为 ``[]``，并追加
@@ -127,6 +132,67 @@ HIDDEN_IMPORTS = [
     "multipart",
     "multipart.multipart",
     "python_multipart",
+    # 桌面界面：app.py 里是函数内延迟导入，显式列出以免静态分析遗漏
+    "desktop",
+    "desktop.app",
+    "desktop.bridge",
+    "desktop.cue_table",
+    "desktop.cues",
+    "desktop.dialogs",
+    "desktop.logging_setup",
+    "desktop.main_window",
+    "desktop.player",
+    "desktop.theme",
+    "desktop.timeline",
+    # Qt 模块（QtMultimedia 的后端插件由 PyInstaller 的 PySide6 hook 收集）
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "PySide6.QtMultimedia",
+    "PySide6.QtMultimediaWidgets",
+]
+
+#: PySide6 里与运行无关的大块模块：QtWebEngine 内置 Chromium（约 150MB）且
+#: 其 ffmpeg 构建不含 H.264/AAC；QtQuick/QtQml/Qt3D/QtCharts/QtPdf/QtSql 等
+#: 本应用均未使用，排除以控制体积。
+QT_EXCLUDES = [
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineQuick",
+    "PySide6.QtWebChannel",
+    "PySide6.QtWebSockets",
+    "PySide6.QtQuick",
+    "PySide6.QtQuick3D",
+    "PySide6.QtQuickWidgets",
+    "PySide6.QtQuickControls2",
+    "PySide6.QtQml",
+    "PySide6.Qt3DCore",
+    "PySide6.Qt3DRender",
+    "PySide6.Qt3DAnimation",
+    "PySide6.Qt3DExtras",
+    "PySide6.Qt3DInput",
+    "PySide6.Qt3DLogic",
+    "PySide6.QtCharts",
+    "PySide6.QtDataVisualization",
+    "PySide6.QtGraphs",
+    "PySide6.QtPdf",
+    "PySide6.QtPdfWidgets",
+    "PySide6.QtSql",
+    "PySide6.QtTest",
+    "PySide6.QtBluetooth",
+    "PySide6.QtNfc",
+    "PySide6.QtPositioning",
+    "PySide6.QtSensors",
+    "PySide6.QtSerialPort",
+    "PySide6.QtRemoteObjects",
+    "PySide6.QtScxml",
+    "PySide6.QtSpatialAudio",
+    "PySide6.QtTextToSpeech",
+    "PySide6.QtHelp",
+    "PySide6.QtDesigner",
+    "PySide6.QtUiTools",
+    "PySide6.QtNetworkAuth",
+    "PySide6.QtDBus",
 ]
 
 binaries: list = []
@@ -158,6 +224,9 @@ a = Analysis(
         "torch", "tensorflow", "transformers", "matplotlib", "pandas",
         "scipy", "PIL", "tkinter", "IPython", "jupyter", "notebook",
         "pytest", "edge_tts", "sphinx",
+        # 桌面界面只用 PySide6 的 Core/Gui/Widgets/Multimedia；其余 Qt 模块
+        # （含内置 Chromium 的 QtWebEngine）排除，详见 QT_EXCLUDES
+        *QT_EXCLUDES,
     ],
     noarchive=False,
 )
@@ -170,7 +239,9 @@ _EXE_COMMON = dict(
     strip=False,
     upx=False,               # 不开 UPX：避免误报与潜在损坏
     runtime_tmpdir=None,
-    console=True,            # 保留控制台：显示识别日志与错误，便于定位
+    # 窗口程序：不显示控制台（更像桌面软件）；日志写入 data/logs/，
+    # 启动与识别异常会以弹窗或界面提示呈现
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

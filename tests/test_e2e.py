@@ -61,7 +61,9 @@ def server():
         pytest.skip(f"edge-tts 不可用，跳过 E2E: {exc}")
 
     port = _free_port()
-    env = dict(os.environ, PORT=str(port), HF_HUB_DISABLE_PROGRESS_BARS="1")
+    env = dict(os.environ, PORT=str(port), HF_HUB_DISABLE_PROGRESS_BARS="1",
+               # 端到端测试只走 HTTP 接口，不开桌面窗口
+               SUBTITLE_STUDIO_NO_GUI="1")
     log_path = os.path.join(PROJECT_ROOT, "data", "e2e_server.log")
     logf = open(log_path, "w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(
